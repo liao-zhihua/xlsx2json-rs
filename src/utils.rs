@@ -1,5 +1,8 @@
 use std::path::Path;
 use crate::error::{Result, XlsxError};
+use serde_json::{Map, Value};
+use crate::config::Target;
+
 
 pub fn is_excel_file<P: AsRef<Path>>(path: P) -> bool {
     let path = path.as_ref();
@@ -129,25 +132,38 @@ pub fn need_regenerate<P: AsRef<Path>>(
 
 pub fn filter_data(
     headers: &[String],
-    types: &[String],
+    // types: &[String],
     marks: &[String],
-    data: &[Vec<serde_json::Value>],
-    target: &str,
-) -> (Vec<String>, Vec<String>, Vec<Vec<serde_json::Value>>) {
+    data: &Map<String, Value>,
+    target: Target,
+) -> (Vec<String>, Map::<String, Value>) {
     let mut filtered_headers = Vec::new();
-    let mut filtered_types = Vec::new();
-    let mut filtered_data = Vec::new();
+    // let mut filtered_types = Vec::new();
+    let mut filtered_data = Map::<String, Value>::new();
 
     // 创建列索引映射
+    // let valid_indices: Vec<usize> = marks
+    //     .iter()
+    //     .enumerate()
+    //     .filter_map(|(i, mark)| {
+    //         let mark = mark.trim().to_lowercase();
+    //         if mark == "b" || mark == target {
+    //             Some(i)
+    //         } else {
+    //             None
+    //         }
+    //     })
+    //     .collect();
+
     let valid_indices: Vec<usize> = marks
         .iter()
         .enumerate()
         .filter_map(|(i, mark)| {
-            let mark = mark.trim().to_lowercase();
-            if mark == "b" || mark == target {
-                Some(i)
-            } else {
-                None
+            match mark.trim().to_lowercase().as_str() {
+                "b" => Some(i),
+                "s" if matches!(target, Target::Server | Target::Both) => Some(i),
+                "c" if matches!(target, Target::Client | Target::Both) => Some(i),
+                _ => None,
             }
         })
         .collect();
@@ -155,17 +171,26 @@ pub fn filter_data(
     // 过滤表头和类型
     for &idx in &valid_indices {
         filtered_headers.push(headers[idx].clone());
-        filtered_types.push(types[idx].clone());
+        // filtered_types.push(types[idx].clone());
     }
 
     // 过滤数据
-    for row in data {
-        let filtered_row: Vec<serde_json::Value> = valid_indices
-            .iter()
-            .map(|&idx| row[idx].clone())
-            .collect();
-        filtered_data.push(filtered_row);
+    for (key, row_value) in data.iter() {
+        if let Value::Object(row_map) = row_value {
+            let mut new_row = Map::new();
+            for &idx in &valid_indices {
+                let header = &headers[idx];
+                if let Some(v) = row_map.get(header) {
+                    new_row.insert(header.clone(), v.clone());
+                } 
+                // else {
+                //     new_row.insert(header.clone(), Value::Null);
+                // }
+            }
+            filtered_data.insert(key.clone(), Value::Object(new_row));
+        }
     }
 
-    (filtered_headers, filtered_types, filtered_data)
-} 
+    // (filtered_headers, filtered_types, filtered_data)
+    (filtered_headers, filtered_data)
+}

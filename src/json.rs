@@ -1,45 +1,21 @@
-use serde::Serialize;
 use std::path::Path;
 use crate::error::{Result, XlsxError};
-
-#[derive(Debug, Serialize)]
-pub struct OutputJson {
-    pub headers: Vec<String>,
-    pub types: Vec<String>,
-    pub data: Vec<Vec<serde_json::Value>>,
-}
-
-impl OutputJson {
-    pub fn new(headers: Vec<String>, types: Vec<String>, data: Vec<Vec<serde_json::Value>>) -> Self {
-        Self {
-            headers,
-            types,
-            data,
-        }
-    }
-
-    pub fn save<P: AsRef<Path>>(&self, path: P, pretty: bool) -> Result<()> {
-        let json: String;
-        if pretty {
-            json = serde_json::to_string_pretty(self)?;
-        } else {
-            json = serde_json::to_string(self)?;
-        }
-        std::fs::write(path, json)?;
-        Ok(())
-    }
-}
+use std::fs;
 
 pub fn save_json<P: AsRef<Path>>(
     path: P,
-    headers: Vec<String>,
-    types: Vec<String>,
-    data: Vec<Vec<serde_json::Value>>,
+    data: serde_json::Map<String, serde_json::Value>,
     pretty: bool,
 ) -> Result<()> {
-    let output = OutputJson::new(headers, types, data);
-    output.save(path, pretty)
+        let json = if pretty {
+            serde_json::to_string_pretty(&data)?
+        } else {
+            serde_json::to_string(&data)?
+        };
+        fs::write(path, json)?;
+        Ok(())
 }
+
 
 pub fn ensure_output_dirs<P: AsRef<Path>>(output_dir: P) -> Result<()> {
     let server_dir = output_dir.as_ref().join("server");

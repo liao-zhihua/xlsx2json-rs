@@ -1,8 +1,10 @@
 use calamine::{Reader, Xlsx, open_workbook};
 use std::path::Path;
+use serde_json::{Map, Value};
 use crate::error::{Result, XlsxError};
 use crate::utils::{convert_value_by_type, filter_data};
 use crate::json::save_json;
+use crate::config::Target;
 
 pub struct ExcelProcessor {
     config: crate::config::Config,
@@ -86,7 +88,7 @@ impl ExcelProcessor {
         let marks = marks[..valid_header_count].to_vec();
 
         // 从第五行开始读取数据
-        let mut data = Vec::new();
+        let mut data = Map::<String, Value>::new();
         let mut has_error = false;
 
         for (i, row) in rows.iter().skip(4).enumerate() {
@@ -94,18 +96,50 @@ impl ExcelProcessor {
                 continue;
             }
 
-            let mut row_data = Vec::new();
+            let mut row_obj = Map::<String, Value>::new();
+            let mut id_value: Option<String> = None;
+
             for (j, cell) in row.iter().take(valid_header_count).enumerate() {
                 match convert_value_by_type(cell, &types[j], i + 5, &headers[j]) {
-                    Ok(value) => row_data.push(value),
+                    Ok(value) => {
+                        // 第一列作为 key
+                        if j == 0 {
+                            id_value = Some(match &value {
+                                Value::Number(n) => n.to_string(),
+                                Value::String(s) => s.clone(),
+                                _ => {
+                                    // eprintln!("错误: 文件 {} 第 {} 行第一列不能作为 key", excel_file.display(), i + 5);
+                                    // has_error = true;
+                                    continue;
+                                }
+                            });
+                        }
+                        // 插入行对象
+                        if !value.is_null() {
+                             row_obj.insert(headers[j].clone(), value);
+                        }
+                        // row_obj.insert(headers[j].clone(), value);
+                    }
                     Err(e) => {
                         eprintln!("错误: {}", e);
                         has_error = true;
-                        row_data.push(serde_json::Value::Null);
+                        // row_obj.insert(headers[j].clone(), Value::Null);
                     }
                 }
             }
-            data.push(row_data);
+
+            // 确保 key 不为空
+            if let Some(key) = id_value {
+                if data.contains_key(&key) {
+                    eprintln!("错误: 文件 {} key {} 重复，第 {} 行", excel_file.display(), key, i + 5);
+                    has_error = true;
+                }
+                data.insert(key, Value::Object(row_obj));
+            }
+            // } else {
+            //     eprintln!("错误:  文件 {} 第 {} 行第一列为空，无法作为 key", excel_file.display(), i + 5);
+            //     has_error = true;
+            // }
         }
 
         if has_error {
@@ -113,18 +147,18 @@ impl ExcelProcessor {
         }
 
         // 分别生成服务端和客户端数据
-        let (server_headers, server_types, server_data) = filter_data(&headers, &types, &marks, &data, "s");
-        let (client_headers, client_types, client_data) = filter_data(&headers, &types, &marks, &data, "c");
+        let (server_headers, server_data) = filter_data(&headers, &marks, &data, Target::Server);
+        let (client_headers, client_data) = filter_data(&headers, &marks, &data, Target::Client);
 
         // 生成服务端数据
-        if !server_headers.is_empty() {
-            save_json(&server_path, server_headers, server_types, server_data, self.pretty)?;
+        if !server_headers.is_empty() && self.config.gen_server(excel_file) {
+            save_json(&server_path, server_data, self.pretty)?;
             println!("服务端数据已保存到: {}", server_path.display());
         }
 
         // 生成客户端数据
-        if !client_headers.is_empty() {
-            save_json(&client_path, client_headers, client_types, client_data, self.pretty)?;
+        if !client_headers.is_empty() && self.config.gen_client(excel_file) {
+            save_json(&client_path, client_data, self.pretty)?;
             println!("客户端数据已保存到: {}", client_path.display());
         }
 
