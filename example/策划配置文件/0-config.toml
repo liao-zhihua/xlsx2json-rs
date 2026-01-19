@@ -1,0 +1,18 @@
+# Excel文件名到JSON文件名的映射
+
+[file_mappings."0-Z.配置模板"]
+output = "base_sample"
+target = "Server"
+
+[file_mappings."F.服务器错误码"]
+output = "base_server_error_code"
+target = "Server"
+
+[file_mappings."J.角色"]
+output = "base_hero"
+
+[file_mappings."M.魔法属性"]
+output = "base_magic_attr"
+
+[file_mappings."J.角色升级"]
+output = "base_hero_lv_up"
