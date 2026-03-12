@@ -30,10 +30,21 @@ impl ExcelProcessor {
         );
 
         // 获取输出文件路径
-        let (server_path, client_path) = crate::json::get_output_paths(&self.output_dir, &output_name);
+        // let (server_path, client_path) = crate::json::get_output_paths(&self.output_dir, &output_name);
 
         // 检查是否需要重新生成
-        if !crate::utils::need_regenerate(excel_file, &server_path, &client_path)? {
+        // if !crate::utils::need_regenerate(excel_file, &server_path, &client_path)? {
+        //     println!("跳过文件 {}: JSON文件已是最新", excel_file.display());
+        //     return Ok(());
+        // }
+
+        let (server_path, client_path) = crate::json::get_output_paths(&self.output_dir, &output_name);
+
+        // 根据 config 决定传给检查函数什么路径
+        let s_path = if self.config.gen_server(excel_file) { Some(server_path.as_path()) } else { None };
+        let c_path = if self.config.gen_client(excel_file) { Some(client_path.as_path()) } else { None };
+
+        if !crate::utils::need_regenerate(excel_file, s_path, c_path)? {
             println!("跳过文件 {}: JSON文件已是最新", excel_file.display());
             return Ok(());
         }
