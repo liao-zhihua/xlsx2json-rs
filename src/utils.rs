@@ -97,37 +97,25 @@ pub fn convert_value_by_type(
     }
 }
 
-pub fn need_regenerate<P: AsRef<Path>>(
-    excel_file: P,
-    server_file: P,
-    client_file: P,
+pub fn need_regenerate(
+    excel_file: &Path,
+    server_file: Option<&Path>,
+    client_file: Option<&Path>,
 ) -> Result<bool> {
-    let excel_info = std::fs::metadata(&excel_file)
-        .map_err(|e| XlsxError::Io(e))?;
-    let excel_mod_time = excel_info.modified()
-        .map_err(|e| XlsxError::Io(e))?;
+    let excel_mod_time = std::fs::metadata(excel_file)?.modified()?;
 
-    // 检查服务端JSON文件
-    let server_need_regen = match std::fs::metadata(&server_file) {
-        Ok(server_info) => {
-            let server_mod_time = server_info.modified()
-                .map_err(|e| XlsxError::Io(e))?;
-            server_mod_time < excel_mod_time
-        }
-        Err(_) => true,
+    // 检查逻辑：
+    // 1. 如果 Option 是 None，说明这一端根本不需要，返回 false (不需要重新生成)
+    // 2. 如果 Option 是 Some，检查文件是否存在及时间戳
+    let check = |f: Option<&Path>| -> bool {
+        f.map(|path| {
+            std::fs::metadata(path)
+                .map(|meta| meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH) < excel_mod_time)
+                .unwrap_or(true) // 文件不存在，返回 true (需要重新生成)
+        }).unwrap_or(false) // 配置不需要生成，返回 false
     };
 
-    // 检查客户端JSON文件
-    let client_need_regen = match std::fs::metadata(&client_file) {
-        Ok(client_info) => {
-            let client_mod_time = client_info.modified()
-                .map_err(|e| XlsxError::Io(e))?;
-            client_mod_time < excel_mod_time
-        }
-        Err(_) => true,
-    };
-
-    Ok(server_need_regen || client_need_regen)
+    Ok(check(server_file) || check(client_file))
 }
 
 pub fn filter_data(
