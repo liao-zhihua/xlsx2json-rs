@@ -33,4 +33,5 @@ pub enum XlsxError {
     Other(String),
 }
 
+
 pub type Result<T> = std::result::Result<T, XlsxError>; 

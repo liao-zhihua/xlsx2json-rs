@@ -73,6 +73,24 @@ fn main() -> Result<()> {
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| !e.file_type().is_dir() && is_excel_file(e.path()))
+            .filter(|e| {
+            // 只导出 config 中配置过的文件
+            e.path()
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(|stem| {
+                    if config.file_mappings.contains_key(stem) {
+                        true
+                    } else {
+                        println!(
+                            "跳过文件 {}：未在 config 中配置",
+                            e.path().display()
+                        );
+                        false
+                    }
+                })
+                .unwrap_or(false)
+        })
             .map(|e| e.path().to_path_buf())
             .collect()
     } else if is_excel_file(&args.input) {
@@ -93,7 +111,7 @@ fn main() -> Result<()> {
         .progress_chars("#>-"));
 
     // 创建处理器
-    let processor = excel::ExcelProcessor::new(config, args.output_dir, args.pretty);
+    let processor = excel::ExcelProcessor::new(config, args.output_dir, args.pretty, pb.clone());
 
     // 记录开始时间
     let start_time = Instant::now();

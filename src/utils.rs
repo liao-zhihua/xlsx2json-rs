@@ -1,5 +1,8 @@
 use std::path::Path;
 use crate::error::{Result, XlsxError};
+use serde_json::{Map, Value};
+use crate::config::Target;
+
 
 pub fn is_excel_file<P: AsRef<Path>>(path: P) -> bool {
     let path = path.as_ref();
@@ -94,60 +97,61 @@ pub fn convert_value_by_type(
     }
 }
 
-pub fn need_regenerate<P: AsRef<Path>>(
-    excel_file: P,
-    server_file: P,
-    client_file: P,
+pub fn need_regenerate(
+    excel_file: &Path,
+    server_file: Option<&Path>,
+    client_file: Option<&Path>,
 ) -> Result<bool> {
-    let excel_info = std::fs::metadata(&excel_file)
-        .map_err(|e| XlsxError::Io(e))?;
-    let excel_mod_time = excel_info.modified()
-        .map_err(|e| XlsxError::Io(e))?;
+    let excel_mod_time = std::fs::metadata(excel_file)?.modified()?;
 
-    // 检查服务端JSON文件
-    let server_need_regen = match std::fs::metadata(&server_file) {
-        Ok(server_info) => {
-            let server_mod_time = server_info.modified()
-                .map_err(|e| XlsxError::Io(e))?;
-            server_mod_time < excel_mod_time
-        }
-        Err(_) => true,
+    // 检查逻辑：
+    // 1. 如果 Option 是 None，说明这一端根本不需要，返回 false (不需要重新生成)
+    // 2. 如果 Option 是 Some，检查文件是否存在及时间戳
+    let check = |f: Option<&Path>| -> bool {
+        f.map(|path| {
+            std::fs::metadata(path)
+                .map(|meta| meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH) < excel_mod_time)
+                .unwrap_or(true) // 文件不存在，返回 true (需要重新生成)
+        }).unwrap_or(false) // 配置不需要生成，返回 false
     };
 
-    // 检查客户端JSON文件
-    let client_need_regen = match std::fs::metadata(&client_file) {
-        Ok(client_info) => {
-            let client_mod_time = client_info.modified()
-                .map_err(|e| XlsxError::Io(e))?;
-            client_mod_time < excel_mod_time
-        }
-        Err(_) => true,
-    };
-
-    Ok(server_need_regen || client_need_regen)
+    Ok(check(server_file) || check(client_file))
 }
 
 pub fn filter_data(
     headers: &[String],
-    types: &[String],
+    // types: &[String],
     marks: &[String],
-    data: &[Vec<serde_json::Value>],
-    target: &str,
-) -> (Vec<String>, Vec<String>, Vec<Vec<serde_json::Value>>) {
+    data: &Map<String, Value>,
+    target: Target,
+) -> (Vec<String>, Map::<String, Value>) {
     let mut filtered_headers = Vec::new();
-    let mut filtered_types = Vec::new();
-    let mut filtered_data = Vec::new();
+    // let mut filtered_types = Vec::new();
+    let mut filtered_data = Map::<String, Value>::new();
 
     // 创建列索引映射
+    // let valid_indices: Vec<usize> = marks
+    //     .iter()
+    //     .enumerate()
+    //     .filter_map(|(i, mark)| {
+    //         let mark = mark.trim().to_lowercase();
+    //         if mark == "b" || mark == target {
+    //             Some(i)
+    //         } else {
+    //             None
+    //         }
+    //     })
+    //     .collect();
+
     let valid_indices: Vec<usize> = marks
         .iter()
         .enumerate()
         .filter_map(|(i, mark)| {
-            let mark = mark.trim().to_lowercase();
-            if mark == "b" || mark == target {
-                Some(i)
-            } else {
-                None
+            match mark.trim().to_lowercase().as_str() {
+                "b" => Some(i),
+                "s" if matches!(target, Target::Server | Target::Both) => Some(i),
+                "c" if matches!(target, Target::Client | Target::Both) => Some(i),
+                _ => None,
             }
         })
         .collect();
@@ -155,17 +159,26 @@ pub fn filter_data(
     // 过滤表头和类型
     for &idx in &valid_indices {
         filtered_headers.push(headers[idx].clone());
-        filtered_types.push(types[idx].clone());
+        // filtered_types.push(types[idx].clone());
     }
 
     // 过滤数据
-    for row in data {
-        let filtered_row: Vec<serde_json::Value> = valid_indices
-            .iter()
-            .map(|&idx| row[idx].clone())
-            .collect();
-        filtered_data.push(filtered_row);
+    for (key, row_value) in data.iter() {
+        if let Value::Object(row_map) = row_value {
+            let mut new_row = Map::new();
+            for &idx in &valid_indices {
+                let header = &headers[idx];
+                if let Some(v) = row_map.get(header) {
+                    new_row.insert(header.clone(), v.clone());
+                } 
+                // else {
+                //     new_row.insert(header.clone(), Value::Null);
+                // }
+            }
+            filtered_data.insert(key.clone(), Value::Object(new_row));
+        }
     }
 
-    (filtered_headers, filtered_types, filtered_data)
-} 
+    // (filtered_headers, filtered_types, filtered_data)
+    (filtered_headers, filtered_data)
+}
