@@ -5,6 +5,7 @@ mod json;
 mod utils;
 
 use std::path::PathBuf;
+use std::process;
 use std::time::Instant;
 use clap::Parser;
 use walkdir::WalkDir;
@@ -39,7 +40,14 @@ struct Args {
     pretty: bool,
 }
 
-fn main() -> Result<()> {
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("错误: {}", e);
+        process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     // 初始化日志
     //env_logger::init();
 

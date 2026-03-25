@@ -1,4 +1,5 @@
 use calamine::{open_workbook, Reader, Xlsx};
+use colored::Colorize;
 use indicatif::ProgressBar;
 use serde_json::{Map, Value};
 use std::path::Path;
@@ -32,6 +33,10 @@ impl ExcelProcessor {
 
     fn log(&self, message: impl Into<String>) {
         self.progress.println(message.into());
+    }
+
+    fn log_error(&self, message: impl Into<String>) {
+        self.progress.println(message.into().red().to_string());
     }
 
     pub fn process_file<P: AsRef<Path>>(&self, excel_file: P) -> Result<()> {
@@ -118,7 +123,7 @@ impl ExcelProcessor {
                                 Value::Number(n) => n.to_string(),
                                 Value::String(s) => s.clone(),
                                 _ => {
-                                    self.log(format!(
+                                    self.log_error(format!(
                                         "错误: 文件 {} 第 {} 行第一列无法作为 key",
                                         excel_file.display(),
                                         i + 5
@@ -135,7 +140,7 @@ impl ExcelProcessor {
                         }
                     }
                     Err(e) => {
-                        self.log(format!("错误: 文件 {}: {}", excel_file.display(), e));
+                        self.log_error(format!("错误: 文件 {}: {}", excel_file.display(), e));
                         has_error = true;
                     }
                 }
@@ -143,7 +148,7 @@ impl ExcelProcessor {
 
             if let Some(key) = id_value {
                 if data.contains_key(&key) {
-                    self.log(format!(
+                    self.log_error(format!(
                         "错误: 文件 {} key {} 重复，第 {} 行",
                         excel_file.display(),
                         key,
@@ -154,7 +159,7 @@ impl ExcelProcessor {
                 data.insert(key, Value::Object(row_obj));
             } else {
                 if !key_error_reported {
-                    self.log(format!(
+                    self.log_error(format!(
                         "错误: 文件 {} 第 {} 行第一列为空，无法作为 key",
                         excel_file.display(),
                         i + 5
